@@ -1,0 +1,162 @@
+# Docker Compose for local development
+# BUG: No health checks defined for any service
+# BUG: Using host network mode which bypasses Docker networking
+# BUG: Mounts entire host filesystem into some containers
+version: "3.8"
+
+services:
+  # BUG: API gateway port conflicts with user-service (both on 8000)
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "8000:5000"  # BUG: External port 8000 maps to wrong internal port 5000
+    environment:
+      - DEBUG=true
+      # BUG: Credentials in compose file
+      - JWT_SECRET=my-super-secret-jwt-key-dont-share
+    # BUG: Depends_on doesn't guarantee services are ready, only started
+    depends_on:
+      - user-service
+      - order-service
+      - auth-service
+      - notification-service
+    # BUG: No restart policy
+    networks:
+      - app-network
+    # BUG: Volume mounts source code to allow live editing but also mounts sensitive dirs
+    volumes:
+      - ./backend/api-gateway:/app
+      - /etc/passwd:/etc/passwd:ro  # BUG: Mounts host passwd file
+
+  user-service:
+    build:
+      context: ./backend/user-service
+      dockerfile: Dockerfile
+    ports:
+      # BUG: Port conflict - user-service also tries to use 8000
+      - "8001:8001"
+    environment:
+      - DB_PASSWORD=Passw0rd123!
+      - ADMIN_PASSWORD=admin123
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - app-network
+    volumes:
+      - ./backend/user-service:/app
+    # BUG: No memory/CPU limits - can consume all host resources
+    restart: "no"  # BUG: Should be "unless-stopped" or "always"
+
+  order-service:
+    build:
+      context: ./backend/order-service
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - DB_PASSWORD=Passw0rd123!
+      - ORDER_DB_PATH=/tmp/orders.db
+      # BUG: Tax rate set wrong
+      - TAX_RATE=10
+    depends_on:
+      - postgres
+    networks:
+      - app-network
+    volumes:
+      - ./backend/order-service:/app
+
+  auth-service:
+    build:
+      context: ./backend/auth-service
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      # BUG: Hardcoded secrets in compose file committed to repo
+      - JWT_SECRET=my-super-secret-jwt-key-dont-share
+      - AUTH_DB_PATH=/tmp/auth.db
+    depends_on:
+      - user-service
+    networks:
+      - app-network
+    volumes:
+      - ./backend/auth-service:/app
+
+  notification-service:
+    build:
+      context: ./backend/notification-service
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8004"
+    environment:
+      - SMTP_HOST=smtp.gmail.com
+      - SMTP_PORT=587
+      - SMTP_USER=noreply@dummycompany.com
+      # BUG: Real SMTP password in compose file
+      - SMTP_PASSWORD=smtp-password-123!
+      - TWILIO_AUTH_TOKEN=TWILIO-FAKE-TOKEN-FOR-TESTING-ONLY
+    networks:
+      - app-network
+
+  postgres:
+    # BUG: Using postgres:latest - non-reproducible
+    image: postgres:latest
+    environment:
+      POSTGRES_DB: appdb
+      POSTGRES_USER: postgres
+      # BUG: Weak password for database
+      POSTGRES_PASSWORD: Passw0rd123!
+    ports:
+      # BUG: Postgres exposed on all interfaces
+      - "5432:5432"
+    networks:
+      - app-network
+    # BUG: No persistent volume - data lost on container restart
+    # volumes:
+    #   - pgdata:/var/lib/postgresql/data
+
+  redis:
+    # BUG: Using redis:latest
+    image: redis:latest
+    ports:
+      # BUG: Redis exposed without password
+      - "6379:6379"
+    networks:
+      - app-network
+    # BUG: No authentication configured
+    # command: redis-server --requirepass "redis-password"
+
+  # BUG: pgadmin included with default credentials
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      # BUG: Weak pgadmin credentials
+      PGADMIN_DEFAULT_EMAIL: admin@admin.com
+      PGADMIN_DEFAULT_PASSWORD: admin
+    ports:
+      - "5050:80"
+    networks:
+      - app-network
+
+  # BUG: Redis Commander exposed without auth
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    networks:
+      - app-network
+    depends_on:
+      - redis
+
+networks:
+  app-network:
+    driver: bridge
+
+# BUG: Volumes section missing - postgres data is ephemeral
+# volumes:
+#   pgdata:

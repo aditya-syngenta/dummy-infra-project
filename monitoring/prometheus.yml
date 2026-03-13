@@ -1,0 +1,48 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  # BUG: No external labels - hard to identify which cluster alerts come from
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            # BUG: Alertmanager URL hardcoded instead of service discovery
+            - "alertmanager:9093"
+
+rule_files:
+  - "alerts.yml"
+
+scrape_configs:
+  # BUG: Scraping kubernetes API server directly - should use kube-state-metrics
+  - job_name: "kubernetes-apiservers"
+    kubernetes_sd_configs:
+      - role: endpoints
+    scheme: https
+    tls_config:
+      # BUG: TLS verification disabled
+      insecure_skip_verify: true
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+
+  - job_name: "app-services"
+    static_configs:
+      - targets:
+          # BUG: Hardcoded service IPs instead of using service discovery
+          - "10.0.1.10:8000"
+          - "10.0.1.11:8001"
+          - "10.0.1.12:8002"
+          - "10.0.1.13:8003"
+          - "10.0.1.14:8004"
+    # BUG: No metrics_path configured - assumes /metrics which may be wrong
+    # BUG: No relabeling rules
+
+  - job_name: "postgres"
+    static_configs:
+      - targets:
+          - "10.0.1.20:9187"  # postgres_exporter
+    # BUG: No auth configured for postgres exporter
+
+  - job_name: "redis"
+    static_configs:
+      - targets:
+          - "10.0.1.21:9121"  # redis_exporter

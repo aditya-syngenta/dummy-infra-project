@@ -1,0 +1,43 @@
+# ConfigMaps
+# BUG: Sensitive data stored in ConfigMap instead of Secret
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: default
+data:
+  # BUG: DB credentials in ConfigMap (not encrypted)
+  DB_HOST: "dummy-infra-prod-db.us-east-1.rds.amazonaws.com"
+  DB_PORT: "5432"
+  DB_NAME: "appdb"
+  DB_USER: "postgres"
+  DB_PASSWORD: "Passw0rd123!"  # BUG: Secret in ConfigMap
+  REDIS_HOST: "dummy-infra-prod-redis.cache.amazonaws.com"
+  REDIS_PORT: "6379"
+  # BUG: JWT secret in ConfigMap
+  JWT_SECRET: "my-super-secret-jwt-key-dont-share"
+  # BUG: Third-party API keys in ConfigMap
+  TWILIO_AUTH_TOKEN: "TWILIO-FAKE-TOKEN-FOR-TESTING-ONLY"
+  SMTP_PASSWORD: "smtp-password-123!"
+  # BUG: Wrong log level for production
+  LOG_LEVEL: "DEBUG"
+  # BUG: Debug mode enabled in production
+  DEBUG: "true"
+  # BUG: CORS allows all origins
+  ALLOWED_ORIGINS: "*"
+---
+# BUG: Kubernetes Secret with base64-encoded (not encrypted) values
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: default
+type: Opaque
+data:
+  # BUG: These are just base64 encoded, not encrypted
+  # echo -n "Passw0rd123!" | base64
+  db-password: UGFzc3cwcmQxMjMh
+  # echo -n "my-super-secret-jwt-key-dont-share" | base64
+  jwt-secret: bXktc3VwZXItc2VjcmV0LWp3dC1rZXktZG9udC1zaGFyZQ==
+  # echo -n "smtp-password-123!" | base64
+  smtp-password: c210cC1wYXNzd29yZC0xMjMh

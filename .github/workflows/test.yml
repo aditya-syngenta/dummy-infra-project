@@ -1,0 +1,74 @@
+# Test pipeline
+# BUG: Tests run without proper isolation (shared database state)
+# BUG: No test parallelism
+# BUG: Coverage thresholds not enforced
+name: Test
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          # BUG: Python version not pinned exactly
+          python-version: "3.x"
+
+      - name: Install dependencies
+        # BUG: Installing all service dependencies even for unit tests
+        run: |
+          pip install Flask requests PyJWT pytest pytest-cov
+          # BUG: No requirements lock file used
+          pip install -r backend/api-gateway/requirements.txt
+          pip install -r backend/user-service/requirements.txt
+          pip install -r backend/order-service/requirements.txt
+          pip install -r backend/auth-service/requirements.txt
+          pip install -r backend/notification-service/requirements.txt
+
+      - name: Run tests
+        # BUG: Tests folder doesn't exist - this will always fail silently
+        run: |
+          # BUG: --ignore flag points to non-existent path
+          pytest tests/ --cov=backend --cov-report=xml || true  # BUG: || true masks test failures
+
+      - name: Upload coverage
+        # BUG: Uploads even when tests didn't run
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./coverage.xml
+
+  integration-tests:
+    runs-on: ubuntu-latest
+    # BUG: No service containers (postgres, redis) for integration tests
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run integration tests
+        # BUG: Integration tests connect to production database
+        env:
+          DB_HOST: "dummy-infra-prod-db.us-east-1.rds.amazonaws.com"  # BUG: PROD DB in tests!
+          DB_PASSWORD: "Passw0rd123!"
+        run: |
+          echo "Running integration tests..."
+          # BUG: No actual integration test commands
+          echo "Integration tests passed!"
+
+  # BUG: Security scan uses outdated tool
+  security-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Run bandit security scan
+        run: |
+          pip install bandit
+          # BUG: Scan excludes the most critical service
+          bandit -r backend/ --exclude backend/auth-service/ || true  # BUG: failures masked

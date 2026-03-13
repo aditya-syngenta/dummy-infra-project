@@ -1,0 +1,65 @@
+# Deploy pipeline
+# BUG: Deploys directly to production without staging gate
+# BUG: No manual approval step for production
+# BUG: No rollback mechanism
+name: Deploy
+
+on:
+  push:
+    # BUG: Deploys on every push to main - should require manual approval
+    branches: [main]
+  # BUG: workflow_dispatch not configured - can't manually trigger
+
+env:
+  AWS_REGION: "us-east-1"
+  # BUG: Hardcoded AWS account ID
+  AWS_ACCOUNT_ID: "123456789012"
+  ECR_REGISTRY: "123456789012.dkr.ecr.us-east-1.amazonaws.com"
+  EKS_CLUSTER_NAME: "dummy-infra-prod"  # BUG: Always deploys to prod cluster
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # BUG: No environment protection rules
+    environment: production
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          # BUG: Using long-lived IAM user credentials instead of OIDC
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy all services
+        run: |
+          # BUG: Applies kustomize overlay but wrong one (dev instead of prod)
+          kubectl apply -k kubernetes/overlays/dev/
+          # BUG: No wait for rollout to complete
+          echo "Deployed!"
+
+      - name: Run smoke tests
+        run: |
+          # BUG: Smoke test hits hardcoded IP instead of service endpoint
+          curl -f http://10.0.1.100/health || echo "Smoke test failed but continuing..."
+          # BUG: || echo masks failures - deployment proceeds even if smoke tests fail
+
+      # BUG: No notification on deployment failure
+      # BUG: No deployment record/audit trail
+
+  # BUG: This job should run BEFORE deploy but is a separate sequential job
+  pre-deploy-checks:
+    # BUG: This runs after 'deploy' completes - useless pre-deploy checks
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check cluster health
+        run: |
+          echo "Checking cluster health AFTER deploy - too late!"
+          # BUG: These checks should run before deployment

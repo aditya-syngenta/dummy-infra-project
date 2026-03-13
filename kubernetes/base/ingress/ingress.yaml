@@ -1,0 +1,68 @@
+# Ingress configuration
+# BUG: No TLS/SSL configured - HTTP only
+# BUG: No rate limiting annotations
+# BUG: No authentication middleware
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: main-ingress
+  namespace: default
+  annotations:
+    # BUG: nginx.ingress.kubernetes.io/ssl-redirect: "false" - disables HTTPS redirect
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    # BUG: Large body size allows huge file uploads (DoS risk)
+    nginx.ingress.kubernetes.io/proxy-body-size: "0"
+    # BUG: Timeout too long
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  # BUG: No TLS block configured
+  rules:
+    - host: api.dummy-infra.example.com
+      http:
+        paths:
+          - path: /api/v1/users
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 80
+          - path: /api/v1/orders
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 80
+          # BUG: Admin path exposed without additional auth
+          - path: /admin
+            pathType: Prefix
+            backend:
+              service:
+                name: api-gateway
+                port:
+                  number: 80
+---
+# BUG: HPA configured with wrong metric names
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: api-gateway-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: api-gateway
+  minReplicas: 1
+  # BUG: Max replicas very high without cost controls
+  maxReplicas: 100
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # BUG: Scale at 95% CPU - too late
+          averageUtilization: 95

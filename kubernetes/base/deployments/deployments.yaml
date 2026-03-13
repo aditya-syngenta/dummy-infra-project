@@ -1,0 +1,203 @@
+# API Gateway Deployment
+# BUG: No PodDisruptionBudget defined
+# BUG: No NetworkPolicy restricting traffic
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-gateway
+  namespace: default  # BUG: Should use dedicated namespace
+  labels:
+    app: api-gateway
+    version: latest  # BUG: Using 'latest' is not best practice
+spec:
+  # BUG: Only 1 replica - no high availability
+  replicas: 1
+  selector:
+    matchLabels:
+      app: api-gateway
+  template:
+    metadata:
+      labels:
+        app: api-gateway
+    spec:
+      # BUG: Running as root
+      # securityContext missing
+      containers:
+        - name: api-gateway
+          # BUG: Using latest tag - non-deterministic
+          image: dummy-infra/api-gateway:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 5000  # BUG: Wrong port - app uses 8000
+          env:
+            # BUG: Secrets in plain text env vars instead of Kubernetes Secrets
+            - name: JWT_SECRET
+              value: "my-super-secret-jwt-key-dont-share"
+            - name: DB_PASSWORD
+              value: "Passw0rd123!"
+          resources:
+            requests:
+              # BUG: Over-provisioned resources
+              cpu: "1000m"
+              memory: "2Gi"
+            limits:
+              cpu: "2000m"
+              memory: "4Gi"
+          # BUG: No liveness probe
+          # BUG: No readiness probe
+          # BUG: No startup probe
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: user-service
+  namespace: default
+  labels:
+    app: user-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: user-service
+  template:
+    metadata:
+      labels:
+        app: user-service
+    spec:
+      containers:
+        - name: user-service
+          image: dummy-infra/user-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          env:
+            - name: DB_PASSWORD
+              value: "Passw0rd123!"
+            - name: ADMIN_PASSWORD
+              value: "admin123"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "1000m"
+              memory: "1Gi"
+          livenessProbe:
+            httpGet:
+              path: /health
+              # BUG: Wrong port in liveness probe
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            # BUG: Initial delay too short - service may not be ready
+            initialDelaySeconds: 1
+            periodSeconds: 5
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  namespace: default
+  labels:
+    app: order-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: order-service
+  template:
+    metadata:
+      labels:
+        app: order-service
+    spec:
+      containers:
+        - name: order-service
+          image: dummy-infra/order-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8002
+          env:
+            - name: DB_PASSWORD
+              value: "Passw0rd123!"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              # BUG: CPU limit lower than request - impossible configuration
+              cpu: "100m"
+              memory: "512Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: auth-service
+  namespace: default
+  labels:
+    app: auth-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: auth-service
+  template:
+    metadata:
+      labels:
+        app: auth-service
+    spec:
+      containers:
+        - name: auth-service
+          image: dummy-infra/auth-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8003
+          env:
+            - name: JWT_SECRET
+              value: "my-super-secret-jwt-key-dont-share"
+          resources:
+            requests:
+              cpu: "250m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: notification-service
+  namespace: default
+  labels:
+    app: notification-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: notification-service
+  template:
+    metadata:
+      labels:
+        app: notification-service
+    spec:
+      containers:
+        - name: notification-service
+          image: dummy-infra/notification-service:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8004
+          env:
+            - name: SMTP_PASSWORD
+              value: "smtp-password-123!"
+            - name: TWILIO_AUTH_TOKEN
+              value: "TWILIO-FAKE-TOKEN-FOR-TESTING-ONLY"
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"

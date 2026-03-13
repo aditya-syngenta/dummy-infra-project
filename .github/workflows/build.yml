@@ -1,0 +1,130 @@
+# Build and push Docker images pipeline
+# BUG: No caching strategy for Docker layers
+# BUG: Builds on every push including docs-only changes
+# BUG: No image signing or vulnerability scanning
+name: Build
+
+on:
+  push:
+    # BUG: Builds on all branches including feature branches
+    branches: ["**"]
+  pull_request:
+    branches: ["**"]
+
+# BUG: No concurrency group to cancel duplicate builds
+env:
+  # BUG: AWS credentials hardcoded as env vars (should use GitHub OIDC)
+  AWS_ACCESS_KEY_ID: "AKIAIOSFODNN7EXAMPLE"
+  AWS_SECRET_ACCESS_KEY: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+  AWS_REGION: "us-east-1"
+  ECR_REGISTRY: "123456789012.dkr.ecr.us-east-1.amazonaws.com"
+  # BUG: All services use same image tag "latest" regardless of commit
+  IMAGE_TAG: "latest"
+
+jobs:
+  build-api-gateway:
+    # BUG: Using latest ubuntu runner - should pin version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        # BUG: Using deprecated v1 action
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build API Gateway image
+        # BUG: No --no-cache flag - may use stale cached layers
+        # BUG: No multi-stage build
+        run: |
+          docker build -t $ECR_REGISTRY/api-gateway:$IMAGE_TAG ./backend/api-gateway
+          docker push $ECR_REGISTRY/api-gateway:$IMAGE_TAG
+
+      # BUG: No vulnerability scan step (e.g., trivy, snyk)
+      # BUG: No image digest pinning after push
+
+  build-user-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to ECR
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build and push user-service
+        run: |
+          docker build -t $ECR_REGISTRY/user-service:$IMAGE_TAG ./backend/user-service
+          docker push $ECR_REGISTRY/user-service:$IMAGE_TAG
+
+  build-order-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build and push order-service
+        run: |
+          docker build -t $ECR_REGISTRY/order-service:$IMAGE_TAG ./backend/order-service
+          docker push $ECR_REGISTRY/order-service:$IMAGE_TAG
+
+  build-auth-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build and push auth-service
+        run: |
+          docker build -t $ECR_REGISTRY/auth-service:$IMAGE_TAG ./backend/auth-service
+          docker push $ECR_REGISTRY/auth-service:$IMAGE_TAG
+
+  build-notification-service:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build and push notification-service
+        run: |
+          docker build -t $ECR_REGISTRY/notification-service:$IMAGE_TAG ./backend/notification-service
+          docker push $ECR_REGISTRY/notification-service:$IMAGE_TAG
+
+  # BUG: Build summary job doesn't actually verify all builds succeeded
+  build-summary:
+    # BUG: Missing 'needs' dependency - runs before builds complete
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build complete
+        run: echo "All builds done!"
