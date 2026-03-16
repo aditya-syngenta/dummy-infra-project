@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+
+resources:
+  - ../../base/deployments/deployments.yaml
+  - ../../base/services/services.yaml
+  - ../../base/configmaps/configmaps.yaml
+  - ../../base/ingress/ingress.yaml
+
+# BUG: No image tag pinning for prod - still uses latest
+# BUG: No resource quota for namespace
+# BUG: No pod security policies
+patches:
+  - target:
+      kind: Deployment
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        # BUG: Production runs with only 1 replica for all services
+        value: 1

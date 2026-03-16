@@ -1,0 +1,31 @@
+# BUG: No kustomization.yaml - overlays don't work properly
+# Dev overlay - patches for development environment
+# BUG: Dev overlay sets replicas to 0 for cost saving but this breaks dev testing
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: default
+# BUG: No namePrefix for dev environment - resources not distinguishable from prod
+
+resources:
+  - ../../base/deployments/deployments.yaml
+  - ../../base/services/services.yaml
+  - ../../base/configmaps/configmaps.yaml
+  - ../../base/ingress/ingress.yaml
+
+patches:
+  - target:
+      kind: Deployment
+      name: api-gateway
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        # BUG: 0 replicas in dev - service completely unavailable
+        value: 0
+  - target:
+      kind: Deployment
+      name: user-service
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1

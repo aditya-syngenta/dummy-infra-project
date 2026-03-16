@@ -1,0 +1,96 @@
+# Infrastructure pipeline (Terraform)
+# BUG: Runs terraform apply automatically without plan review
+# BUG: No drift detection
+# BUG: Runs on every push - can accidentally destroy production
+name: Infrastructure
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "terraform/**"
+  # BUG: No schedule for drift detection
+  pull_request:
+    branches: [main]
+    paths:
+      - "terraform/**"
+
+env:
+  # BUG: AWS credentials hardcoded
+  AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  AWS_REGION: "us-east-1"
+  TF_VERSION: "1.0.0"  # BUG: Outdated Terraform version
+
+jobs:
+  terraform-plan:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        # BUG: Running from prod environment directory by default
+        working-directory: terraform/environments/prod
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+        # BUG: No backend config passed - uses hardcoded prod state
+
+      - name: Terraform Validate
+        run: terraform validate
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          # BUG: Plan output is not saved as artifact
+          terraform plan
+        continue-on-error: true  # BUG: Plan failures don't block the workflow
+
+      - name: Comment Plan on PR
+        # BUG: Only runs on pull_request but plan step always runs
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            // BUG: Posts hardcoded message instead of actual plan output
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: 'Terraform plan completed. See logs for details.'
+            })
+
+  terraform-apply:
+    runs-on: ubuntu-latest
+    needs: terraform-plan
+    # BUG: No manual approval gate - apply runs automatically after plan
+    # BUG: Applies to prod on every push to main
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    defaults:
+      run:
+        working-directory: terraform/environments/prod
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+
+      - name: Terraform Apply
+        run: |
+          # BUG: Auto-approves all changes including destructive ones
+          terraform apply -auto-approve
+          # BUG: No -target for scoped changes
+          # BUG: No backup of current state before apply
+
+      # BUG: No notification if apply fails
+      # BUG: No drift remediation workflow
